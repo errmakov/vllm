@@ -33,6 +33,65 @@ else:
 logger = init_logger(__name__)
 
 
+def _set_max_whitespace_cnt(node: Any, max_whitespace_cnt: int) -> Any:
+    """Copy a structural tag, bounding whitespace on its json_schema nodes.
+
+    Recurses into every part of the tag except the JSON Schema documents
+    themselves, which belong to the caller and are copied through as-is. Nodes
+    that already carry a bound keep it.
+
+    Args:
+        node: A parsed structural tag or any fragment of one.
+        max_whitespace_cnt: The bound to apply.
+
+    Returns:
+        A new object; the input is left unmodified.
+
+    """
+    if isinstance(node, list):
+        return [_set_max_whitespace_cnt(item, max_whitespace_cnt) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    updated = {
+        key: value
+        if key == "json_schema"
+        else _set_max_whitespace_cnt(value, max_whitespace_cnt)
+        for key, value in node.items()
+    }
+    if node.get("type") == "json_schema" and node.get("max_whitespace_cnt") is None:
+        updated["max_whitespace_cnt"] = max_whitespace_cnt
+    return updated
+
+
+def _with_max_whitespace_cnt(grammar_spec: str, max_whitespace_cnt: int | None) -> str:
+    """Bound whitespace in a structural tag.
+
+    `compile_structural_tag` accepts no whitespace argument, so the bound is
+    carried on the tag's json_schema nodes instead.
+
+    Args:
+        grammar_spec: A serialized structural tag.
+        max_whitespace_cnt: The bound to apply, or None to leave it unbounded.
+
+    Returns:
+        The structural tag, re-serialized only if a bound was applied.
+
+    """
+    if max_whitespace_cnt is None:
+        return grammar_spec
+    if max_whitespace_cnt <= 0:
+        logger.warning_once(
+            "xgrammar requires a positive max_whitespace_cnt for structural "
+            "tags, so whitespace is left unbounded for tool calling. Note that "
+            "disable_any_whitespace has no structural tag equivalent."
+        )
+        return grammar_spec
+    return json.dumps(
+        _set_max_whitespace_cnt(json.loads(grammar_spec), max_whitespace_cnt)
+    )
+
+
 @dataclass
 class XgrammarBackend(StructuredOutputBackend):
     def __post_init__(self):
@@ -130,7 +189,9 @@ class XgrammarBackend(StructuredOutputBackend):
                 ]
                 ctx = self.compiler.compile_structural_tag(tags, s_tag["triggers"])
             else:
-                ctx = self.compiler.compile_structural_tag(grammar_spec)
+                ctx = self.compiler.compile_structural_tag(
+                    _with_max_whitespace_cnt(grammar_spec, max_whitespace_cnt)
+                )
         else:
             logger.error(
                 "Validation should have already occurred. Please file an issue."
