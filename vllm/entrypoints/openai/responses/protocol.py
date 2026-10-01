@@ -53,6 +53,7 @@ from pydantic import (
     Field,
     ValidationError,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
@@ -511,6 +512,12 @@ class ResponsesRequest(OpenAIBaseModel):
         validate_cache_salt(data.get("cache_salt"))
         return data
 
+    @field_validator("store")
+    @classmethod
+    def resolve_null_store(cls, value: bool | None) -> bool:
+        # An explicit null means "unspecified", same as omitting the field.
+        return cls.model_fields["store"].default if value is None else value
+
     @model_validator(mode="before")
     @classmethod
     def validate_background(cls, data):
@@ -518,7 +525,7 @@ class ResponsesRequest(OpenAIBaseModel):
             return data
         if not data.get("background"):
             return data
-        if not data.get("store", True):
+        if (store := data.get("store")) is not None and not store:
             raise VLLMValidationError(
                 "background can only be used when `store` is true",
                 parameter="background",

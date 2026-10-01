@@ -246,3 +246,29 @@ def test_responses_request_parallel_tool_calls_null_accepted():
         {"input": "Hello", "model": "test-model", "parallel_tool_calls": None}
     )
     assert req.parallel_tool_calls is None
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (False, False),
+        (None, True),  # null must resolve to the documented default (true)
+    ],
+)
+def test_responses_request_store_null_resolves_to_default(value, expected):
+    request = ResponsesRequest.model_validate({"input": "Hello", "store": value})
+    assert request.store is expected
+
+
+def test_responses_request_background_with_store_null_accepted():
+    request = ResponsesRequest.model_validate(
+        {"input": "Hello", "background": True, "store": None}
+    )
+    assert request.store is True
+
+
+def test_responses_request_background_with_store_false_rejected():
+    with pytest.raises(VLLMValidationError, match="background can only be used"):
+        ResponsesRequest.model_validate(
+            {"input": "Hello", "background": True, "store": False}
+        )
